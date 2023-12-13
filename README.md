@@ -113,6 +113,103 @@ Example:
         - `wHu:0.17`
         - `tempC:18.0`
 ```
+**Graph stream visualization**
+![Streams](/streams.png)
+
+## Rate limiters
+- Keeps track of user requests.
+- Used for protecting server resources
+- **Fixed window**
+    - Easier to implement
+    - Less precise than sliding window
+    - Space-efficient (Single redis key)
+    - Time-efficient (O(1))
+    - One round-trip to Redis.
+- **Sliding window**
+    - More precise
+    - Trickier to implement
+    - Uses more space and time
+
+## Blocking commands
+- Polling → Each consumer I/O command is executed into Redis.
+- Sometimes is better to block a client if the requested value doesn’t exist after polling.
+- Prevents unnecessary command round trips associated with polling.
+
+### Supports:
+- Lists
+- Sorted sets
+- Strings
+- Pub/Sub features.
+- Streams
+
+### Available blocking commands:
+- BRPOP: `BRPOP key seconds` Blocking version of RPOP (Removes and returns the last element of a list). Blocks the client for the given seconds, and returns `NIL` if any value is pushed to the list after X seconds.
+
+## Error handling
+The captured exceptions have the following structure:
+
+### Single error
+Sample:
+```
+name: ‘ReplyError’
+message: ‘ERR wrong number of arguments for ‘set’ command.
+command ‘SET’
+args [’replyError’]
+code ‘ERR’
+```
+
+### Pipeline/Transactions errors
+Exceptions are not thrown, The catch block is not executed, but it's returned as a part of pipelining EXEC array.
+
+### Connection errors
+Returns information about the retry strategy, including delay, attempts, error details, total retry-time, and times connected.
+- Redis buffers any executed command and executes it after the connection is recovered and established.
+- If we want a “retry strategy” it’s necessary to return the number of milliseconds to wait before trying again in the “retry_strategy” `createClient` Redis callback.
+
+## Performance
+- Network latency
+- Time complexity
+- Atomicity & Blocking
+
+### How to minimize latency?
+- Use pipelining when:
+    - You’re running more than one command (LOOPS)
+    - You don’t need intermediate responses.
+- Pipelining reduces:
+    - Number of round trips
+    - Context switching
+    - Syscalls
+
+### Time Complexity
+- Be aware of the time complexity of the Redis commands your app uses “Visit Redis.io” website.
+- Take care of O(n) Commands.
+- Take time to complete (100000000).
+- Can use a lot of CPU.
+- Might buffer a lot of data.
+- Redis is mostly single-threaded.
+- Other commands will queue up while a long-running command completes.
+- Examples: LRANGE (between 0 to -1) → 100000000 registries.
+- **Always avoid blocking commands in production**
+
+**Performance blocking commands visualization**
+![Streams](/performance.png)
+
+- The `KEYS` command, or `Client.keys()` should NOT be run in production.
+    - Can block for a long time
+    - Use SCAN instead.
+- Ex: Running `KEYS *` with 4’000.000 keys can take up to 4 seconds to run.
+
+**The administrator can also DISABLE Commands to avoid their use in production.**
+
+### Atomicity and Blocking
+- Transactions and Lua scripts block other commands.
+- Consider the time complexity of commands run inside transactions and Lua scripts.
+- If you don’t need transactional semantics, consider a pipeline (which does not block).
+
+## Debugging
+- [MONITOR](https://redis.io/commands/monitor) commands allow to check all the commands sent to Redis.
+- Redis includes a proper f[ull-featured debugger](https://redis.io/topics/ldb/) for Lua Scripts.
+
 
 
 
